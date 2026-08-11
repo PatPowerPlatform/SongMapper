@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0e14" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Song Mapper" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <title>Song Mapper</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">LOCAL MUSIC STRUCTURE</div>
+      <h1>Song Mapper</h1>
+    </div>
+    <button id="infoBtn" class="icon-btn" aria-label="Informacje">i</button>
+  </header>
+
+  <main>
+    <section class="hero card" id="dropZone">
+      <input id="fileInput" type="file" accept="audio/*,.mp3,.m4a,.aac,.wav,.aiff,.flac" multiple hidden />
+      <div class="hero-icon">♫</div>
+      <div>
+        <h2>Dodaj utwory</h2>
+        <p>Analiza i biblioteka działają lokalnie na urządzeniu. Pliki nie są wysyłane na serwer.</p>
+      </div>
+      <button id="pickBtn" class="primary">Wybierz pliki audio</button>
+    </section>
+
+    <section id="libraryCard" class="card">
+      <div class="section-head">
+        <div>
+          <h2>Biblioteka</h2>
+          <div id="libraryMeta" class="muted small">Brak utworów</div>
+        </div>
+        <button id="clearLibraryBtn" class="text-btn danger-text">Wyczyść</button>
+      </div>
+      <div id="trackList" class="track-list empty-state">Dodane utwory pojawią się tutaj.</div>
+    </section>
+
+    <section id="analysisCard" class="card hidden">
+      <div class="section-head">
+        <div class="grow">
+          <div id="trackName" class="track-title">—</div>
+          <div id="trackMeta" class="muted">—</div>
+        </div>
+        <div id="analysisBadge" class="badge">Analiza</div>
+      </div>
+
+      <div id="progressWrap" class="progress-wrap">
+        <div class="progress-track"><div id="analysisProgress" class="progress-fill"></div></div>
+        <div id="analysisStatus" class="muted small">Przygotowanie…</div>
+      </div>
+
+      <div id="statsGrid" class="stats-grid hidden">
+        <div class="stat"><span>BPM</span><strong id="bpmValue">—</strong></div>
+        <div class="stat"><span>Tempo</span><strong id="tempoLabel">—</strong></div>
+        <div class="stat"><span>Sekcje</span><strong id="sectionCount">—</strong></div>
+        <div class="stat"><span>Pewność</span><strong id="confidenceValue">—</strong></div>
+      </div>
+
+      <div id="waveWrap" class="wave-wrap hidden">
+        <canvas id="waveCanvas" width="1200" height="260"></canvas>
+        <div id="playhead" class="playhead"></div>
+      </div>
+
+      <div id="playerWrap" class="player hidden">
+        <div class="player-row">
+          <button id="prevSection" class="round-btn">◀|</button>
+          <button id="back10" class="round-btn">−10</button>
+          <button id="playBtn" class="play-btn">▶</button>
+          <button id="fwd10" class="round-btn">+10</button>
+          <button id="nextSection" class="round-btn">|▶</button>
+        </div>
+        <input id="seek" type="range" min="0" max="1000" value="0" />
+        <div class="time-row"><span id="currentTime">0:00</span><span id="durationTime">0:00</span></div>
+
+        <div class="loop-bar">
+          <label class="toggle"><input id="loopToggle" type="checkbox" /><span></span></label>
+          <div class="grow">
+            <strong>Zapętlanie sekcji</strong>
+            <div id="loopLabel" class="muted small">Wybierz sekcję poniżej</div>
+          </div>
+          <button id="loopMinus" class="mini-flat">−0.1s</button>
+          <button id="loopPlus" class="mini-flat">+0.1s</button>
+        </div>
+
+        <div class="speed-row">
+          <span class="muted small">Prędkość</span>
+          <div class="speed-buttons">
+            <button data-speed=".75">0.75×</button>
+            <button data-speed=".9">0.90×</button>
+            <button data-speed="1" class="active">1×</button>
+            <button data-speed="1.1">1.10×</button>
+            <button data-speed="1.25">1.25×</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="sectionsCard" class="card hidden">
+      <div class="section-head">
+        <h2>Mapa utworu</h2>
+        <button id="reanalyzeBtn" class="text-btn">Analizuj ponownie</button>
+      </div>
+      <div class="hint">Kliknij nazwę/czas, aby skorygować sekcję. ▶ odtwarza fragment, ↻ uruchamia pętlę.</div>
+      <div id="sectionsList" class="sections-list"></div>
+      <div class="button-grid">
+        <button id="addSectionBtn" class="secondary">+ Dodaj sekcję</button>
+        <button id="splitSectionBtn" class="secondary">✂ Podziel tutaj</button>
+      </div>
+    </section>
+
+    <section id="assistantCard" class="card hidden">
+      <div class="section-head">
+        <div>
+          <h2>ChatGPT</h2>
+          <div class="muted small">Opcjonalna druga opinia</div>
+        </div>
+        <div class="badge">Plus-friendly</div>
+      </div>
+      <p class="assistant-text">Aplikacja przygotuje raport z BPM, czasami, podobieństwem sekcji i confidence. Możesz udostępnić go do aplikacji ChatGPT i poprosić o korektę struktury bez konfiguracji API.</p>
+      <div class="button-grid">
+        <button id="shareChatGPTBtn" class="primary">Udostępnij analizę</button>
+        <button id="copyPromptBtn" class="secondary">Kopiuj prompt</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<dialog id="editDialog">
+  <form method="dialog" id="editForm">
+    <h3>Edytuj sekcję</h3>
+    <input id="editIndex" type="hidden" />
+    <label>Typ
+      <select id="editLabel">
+        <option>Intro</option><option>Verse</option><option>Pre-Chorus</option>
+        <option>Chorus</option><option>Bridge</option><option>Break</option><option>Outro</option>
+      </select>
+    </label>
+    <div class="two-col">
+      <label>Start<input id="editStart" type="text" inputmode="decimal" placeholder="1:23.5" /></label>
+      <label>Koniec<input id="editEnd" type="text" inputmode="decimal" placeholder="1:45.0" /></label>
+    </div>
+    <div class="dialog-actions">
+      <button id="deleteSectionBtn" type="button" class="danger">Usuń</button>
+      <div class="spacer"></div>
+      <button value="cancel" class="secondary">Anuluj</button>
+      <button id="saveSectionBtn" value="default" class="primary">Zapisz</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="infoDialog">
+  <form method="dialog">
+    <h3>Song Mapper v2</h3>
+    <p>Analiza działa lokalnie: waveform, energia, widmo, spectral flux, podobieństwo segmentów, transjenty oraz estymacja BPM. Z tego powstaje mapa Intro / Verse / Pre‑Chorus / Chorus / Bridge / Break / Outro.</p>
+    <p>Wynik jest heurystyczny, więc aplikacja pokazuje również confidence i pozwala edytować każdą granicę.</p>
+    <p>Biblioteka korzysta z IndexedDB, dzięki czemu utwory i analiza mogą pozostać zapisane na urządzeniu między uruchomieniami PWA, o ile iOS nie usunie danych witryny.</p>
+    <button value="cancel" class="primary wide">OK</button>
+  </form>
+</dialog>
+
+<audio id="audio" preload="metadata"></audio>
+<script src="app.js"></script>
+</body>
+</html>
