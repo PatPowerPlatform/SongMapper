@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SongMapper v3",
+  "type": "object",
+  "required": [
+    "format",
+    "version",
+    "song",
+    "analysis",
+    "sections",
+    "cues"
+  ],
+  "properties": {
+    "format": {
+      "const": "SongMapper"
+    },
+    "version": {
+      "const": 3
+    },
+    "song": {
+      "type": "object",
+      "required": [
+        "title",
+        "audioFileName",
+        "duration",
+        "bpm"
+      ],
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "audioFileName": {
+          "type": "string"
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0
+        },
+        "bpm": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 1
+        }
+      }
+    },
+    "analysis": {
+      "type": "object",
+      "required": [
+        "source",
+        "notes"
+      ],
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "type",
+          "start",
+          "end",
+          "confidence",
+          "note"
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "Intro",
+              "Verse",
+              "Pre-Chorus",
+              "Chorus",
+              "Bridge",
+              "Break",
+              "Instrumental",
+              "Outro"
+            ]
+          },
+          "start": {
+            "type": "number",
+            "minimum": 0
+          },
+          "end": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "confidence": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "cues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "type",
+          "time",
+          "note"
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "DROP",
+              "BUILD",
+              "BREAKDOWN",
+              "HIT",
+              "BLACKOUT",
+              "ACCENT",
+              "VOCAL IN",
+              "VOCAL OUT",
+              "CUSTOM"
+            ]
+          },
+          "time": {
+            "type": "number",
+            "minimum": 0
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

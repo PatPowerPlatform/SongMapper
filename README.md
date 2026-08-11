@@ -1,34 +1,53 @@
-# Song Mapper v2
+# Song Mapper v3.1
 
-Lokalna PWA na iPhone / Safari do mapowania struktury utworów.
+## Najważniejszy workflow
+1. Dodaj audio do Song Mapper.
+2. Aplikacja wykona wstępną analizę lokalną.
+3. Kliknij **Pobierz prompt dla ChatGPT**.
+4. W aplikacji ChatGPT utwórz nową rozmowę i dodaj:
+   - wygenerowany plik `*-CHATGPT-INSTRUCTIONS.txt`
+   - ten sam plik audio.
+5. Wyślij wiadomość z krótkim poleceniem: `Wykonaj instrukcję z załączonego pliku.`
+6. ChatGPT powinien zwrócić gotowy plik `*.songmap.json`.
+7. Pobierz go na iPhone.
+8. W Song Mapper kliknij **Importuj mapę z ChatGPT** i wybierz pobrany plik.
+9. Sprawdź podgląd oraz wybierz tryb importu.
 
-## Nowości v2
-- lokalna biblioteka utworów w IndexedDB,
-- automatyczny BPM,
-- beat/bar-aware snapping granic sekcji,
-- Intro / Verse / Pre-Chorus / Chorus / Bridge / Break / Outro,
-- automatyczne numerowanie Verse 1, Verse 2, Chorus 1 itd.,
-- confidence dla całej analizy i każdej sekcji,
-- waveform z granicami sekcji i siatką taktów,
-- pętla wybranej sekcji z korektą końca ±0.1 s,
-- playback 0.75x / 0.90x / 1x / 1.10x / 1.25x,
-- poprzednia/następna sekcja,
-- ręczna edycja, dodawanie i dzielenie sekcji,
-- ponowna analiza,
-- przygotowanie raportu do ChatGPT przez systemowe Udostępnij lub schowek.
+## v3
+- import/eksport `.songmap.json`
+- walidacja mapy przed importem
+- lokalny analyzer jako fallback
+- timeline struktury
+- SHOW CUES: DROP, BUILD, BREAKDOWN, HIT, BLACKOUT, ACCENT, VOCAL IN/OUT, CUSTOM
+- ręczne cue pointy
+- cue point na bieżącym czasie
+- sekcje: Intro, Verse, Pre-Chorus, Chorus, Bridge, Break, Instrumental, Outro
+- notatki do sekcji
+- lokalna biblioteka IndexedDB
+- BPM, waveform, loop, korekta pętli, playback speed
+- backup mapy do JSON
 
-## ChatGPT Plus
-ChatGPT Plus i OpenAI API to osobne produkty. Ta wersja nie wymaga API ani dodatkowej opłaty.
-Przycisk „Udostępnij analizę” generuje gotowy prompt z wynikami i uruchamia systemowy arkusz udostępniania iOS. Jeśli ChatGPT jest dostępny jako cel udostępniania, można go wybrać; w przeciwnym razie użyj „Kopiuj prompt”.
+## Aktualizacja z v2
+Wgraj pliki v3 do tego samego repozytorium GitHub Pages, zastępując stare pliki. Service worker ma nową wersję cache. Po wejściu na stronę w Safari zamknij i ponownie otwórz aplikację z ekranu głównego. Jeżeli nadal widzisz v2, usuń web-app z ekranu głównego i dodaj ją ponownie.
 
-## Instalacja na iPhone
-Najwygodniej przez GitHub Pages:
-1. Wgraj wszystkie pliki do repozytorium.
-2. Settings -> Pages -> Deploy from branch -> main / root.
-3. Otwórz HTTPS w Safari na iPhone.
-4. Udostępnij -> Dodaj do ekranu początkowego.
-5. Otwieraj z ikony Song Mapper.
+Audio nie jest wysyłane automatycznie do żadnej usługi. Użytkownik sam dołącza audio w ChatGPT.
 
-## Prywatność
-Audio nie jest wysyłane przez aplikację do żadnego API. Jest przechowywane lokalnie w IndexedDB PWA.
-Użycie „Udostępnij analizę” przekazuje wyłącznie tekstowy raport, nie sam plik audio.
+
+## Enhanced Local Analysis v3.1
+
+Lokalny analizator został przebudowany. Zamiast opierać strukturę głównie na energii i podobieństwie widma, wersja 3.1 wykorzystuje:
+
+- dokładniejszą obwiednię onset/transient do estymacji BPM,
+- automatyczny beat grid i próbę ustalenia fazy taktów,
+- 12-wymiarową chromę (pitch-class profile) do śledzenia harmonii,
+- osobne cechy barwy/tekstury,
+- reprezentację utworu na poziomie taktów,
+- self-similarity matrix całego utworu,
+- checkerboard novelty do wykrywania granic strukturalnych,
+- priorytet fraz 4/8/16-taktowych,
+- porównywanie całych wzorców sekcji zamiast wyłącznie ich średniej energii,
+- rozpoznawanie Chorus głównie z powtarzalności motywu,
+- Pre-Chorus z pozycji przed powtarzającym się Chorus i zmiany harmonicznej,
+- Bridge jako unikalnego fragmentu w późniejszej części utworu.
+
+Wszystko nadal działa lokalnie, bez zewnętrznego API.

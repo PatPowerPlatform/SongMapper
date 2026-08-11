@@ -1,11 +1,11 @@
 {
-  "name": "Song Mapper",
+  "name": "Song Mapper v3",
   "short_name": "Song Mapper",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#080a0f",
   "theme_color": "#0b0e14",
-  "description": "Lokalna analiza struktury utworów, BPM, sekcje i looping.",
+  "description": "Analiza struktury utworów, import map ChatGPT i show cues.",
   "icons": [
     {
       "src": "icon-192.png",

@@ -1,0 +1,87 @@
+{
+  "format": "SongMapper",
+  "version": 3,
+  "song": {
+    "title": "Example Song",
+    "audioFileName": "example.mp3",
+    "duration": 180.0,
+    "bpm": 120.0
+  },
+  "analysis": {
+    "source": "ChatGPT",
+    "notes": "Przykładowy plik."
+  },
+  "sections": [
+    {
+      "type": "Intro",
+      "start": 0.0,
+      "end": 16.0,
+      "confidence": 0.95,
+      "note": ""
+    },
+    {
+      "type": "Verse",
+      "start": 16.0,
+      "end": 48.0,
+      "confidence": 0.9,
+      "note": "Verse 1"
+    },
+    {
+      "type": "Chorus",
+      "start": 48.0,
+      "end": 80.0,
+      "confidence": 0.96,
+      "note": "Chorus 1"
+    },
+    {
+      "type": "Verse",
+      "start": 80.0,
+      "end": 112.0,
+      "confidence": 0.9,
+      "note": "Verse 2"
+    },
+    {
+      "type": "Bridge",
+      "start": 112.0,
+      "end": 140.0,
+      "confidence": 0.85,
+      "note": ""
+    },
+    {
+      "type": "Chorus",
+      "start": 140.0,
+      "end": 172.0,
+      "confidence": 0.96,
+      "note": "Final chorus"
+    },
+    {
+      "type": "Outro",
+      "start": 172.0,
+      "end": 180.0,
+      "confidence": 0.9,
+      "note": ""
+    }
+  ],
+  "cues": [
+    {
+      "type": "VOCAL IN",
+      "time": 16.0,
+      "note": "Wokal wchodzi"
+    },
+    {
+      "type": "BUILD",
+      "time": 44.0,
+      "note": "Build do refrenu"
+    },
+    {
+      "type": "DROP",
+      "time": 48.0,
+      "note": "Refren / pełne wejście"
+    },
+    {
+      "type": "HIT",
+      "time": 140.0,
+      "note": "Final chorus"
+    }
+  ]
+}
