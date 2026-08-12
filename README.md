@@ -1,4 +1,4 @@
-# Song Mapper v3.1
+# Song Mapper v3.2
 
 ## Najważniejszy workflow
 1. Dodaj audio do Song Mapper.
@@ -51,3 +51,13 @@ Lokalny analizator został przebudowany. Zamiast opierać strukturę głównie n
 - Bridge jako unikalnego fragmentu w późniejszej części utworu.
 
 Wszystko nadal działa lokalnie, bez zewnętrznego API.
+
+
+## v3.2 — WAV Fix
+- osobne błędy dla odczytu, dekodowania, analizy i zapisu lokalnego,
+- awaryjny parser WAV, gdy WebAudio/Safari odrzuci plik,
+- PCM 8/16/24/32-bit,
+- IEEE Float32 WAV,
+- WAVE_FORMAT_EXTENSIBLE dla PCM/Float32,
+- błąd IndexedDB / quota nie jest już zgłaszany jako błąd dekodowania,
+- duży WAV może zostać przeanalizowany nawet wtedy, gdy iOS odmówi jego trwałego zapisania w bibliotece.

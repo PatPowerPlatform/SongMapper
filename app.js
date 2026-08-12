@@ -30,7 +30,181 @@ function renderTracks(){$("libraryMeta").textContent=tracks.length?`${tracks.len
 function hideWorkspace(){["analysisCard","chatgptCard","sectionsCard","cuesCard","exchangeCard"].forEach(id=>$(id).classList.add("hidden"))}
 $("clearLibraryBtn").onclick=async()=>{els.audio.pause();tracks.forEach(t=>URL.revokeObjectURL(t.url));tracks=[];activeTrack=null;try{await dbClear()}catch{}hideWorkspace();renderTracks()};
 
-async function analyzeTrack(track){activeTrack=track;activeLoopIndex=null;loopTrim=0;$("loopToggle").checked=false;$("analysisCard").classList.remove("hidden");["chatgptCard","sectionsCard","cuesCard","exchangeCard"].forEach(id=>$(id).classList.add("hidden"));$("waveWrap").classList.add("hidden");$("playerWrap").classList.add("hidden");$("statsGrid").classList.add("hidden");$("timelineWrap").classList.add("hidden");$("progressWrap").classList.remove("hidden");$("analysisBadge").textContent="Analiza";$("trackName").textContent=track.name;$("trackMeta").textContent=`${(track.blob.size/1048576).toFixed(1)} MB`;progress(2,"Wczytywanie pliku…");renderTracks();try{ensureCtx();const arr=await track.blob.arrayBuffer();progress(8,"Dekodowanie audio…");await waitFrame();const buffer=await audioCtx.decodeAudioData(arr.slice(0));track.duration=buffer.duration;const mono=mixMono(buffer);progress(18,"Waveform i energia…");track.peaks=makePeaks(mono,950);await waitFrame();progress(28,"Wykrywanie tempa…");const beat=await estimateBPM(mono,buffer.sampleRate,buffer.duration,p=>progress(28+p*18,"Wykrywanie tempa…"));track.bpm=beat.bpm;const analysis=await extractFeatures(mono,buffer.sampleRate,buffer.duration,beat,(p,s)=>progress(47+p*34,s));progress(84,"Budowanie mapy…");await waitFrame();const result=detectSections(analysis,buffer.duration,beat);track.sections=numberLabels(result.sections);track.confidence=result.confidence;track.featuresSummary=result.summary;track.analyzed=true;track.status="Gotowe";track.mapSource="Local Enhanced";track.analysisNotes="Enhanced local analysis v3.1: beat/bar grid + chroma + self-similarity + phrase recurrence";track.cues=track.cues||[];await dbPut(stripRuntime(track));progress(100,`Znaleziono ${track.sections.length} sekcji`);$("analysisBadge").textContent="Gotowe";await new Promise(r=>setTimeout(r,160));openTrack(track)}catch(e){console.error(e);track.status="Błąd";$("analysisBadge").textContent="Błąd";$("analysisStatus").textContent="Nie udało się zdekodować pliku.";renderTracks()}}
+
+function fourCC(view,off){
+  return String.fromCharCode(view.getUint8(off),view.getUint8(off+1),view.getUint8(off+2),view.getUint8(off+3));
+}
+function decodeWavFallback(arrayBuffer){
+  const v=new DataView(arrayBuffer);
+  if(v.byteLength<44||fourCC(v,0)!=="RIFF"||fourCC(v,8)!=="WAVE")throw new Error("To nie jest poprawny plik RIFF/WAVE.");
+  let pos=12,fmt=null,dataOff=-1,dataSize=0;
+  while(pos+8<=v.byteLength){
+    const id=fourCC(v,pos),size=v.getUint32(pos+4,true),off=pos+8;
+    if(id==="fmt "){
+      if(size<16)throw new Error("Nieprawidłowy chunk fmt w WAV.");
+      fmt={
+        format:v.getUint16(off,true),
+        channels:v.getUint16(off+2,true),
+        sampleRate:v.getUint32(off+4,true),
+        byteRate:v.getUint32(off+8,true),
+        blockAlign:v.getUint16(off+12,true),
+        bits:v.getUint16(off+14,true)
+      };
+      if(fmt.format===0xFFFE && size>=40)fmt.format=v.getUint16(off+24,true);
+    }else if(id==="data"){
+      dataOff=off;
+      dataSize=Math.min(size,v.byteLength-off);
+      break;
+    }
+    pos=off+size+(size&1);
+  }
+  if(!fmt||dataOff<0)throw new Error("WAV nie zawiera wymaganych chunków fmt/data.");
+  if(![1,3].includes(fmt.format))throw new Error(`Nieobsługiwany kodek WAV (${fmt.format}). Obsługiwane są PCM i IEEE Float.`);
+  if(fmt.channels<1||fmt.channels>8)throw new Error(`Nieobsługiwana liczba kanałów: ${fmt.channels}.`);
+  const bytesPerSample=Math.ceil(fmt.bits/8);
+  if(![1,2,3,4].includes(bytesPerSample))throw new Error(`Nieobsługiwana głębia: ${fmt.bits} bit.`);
+  const blockAlign=fmt.blockAlign||bytesPerSample*fmt.channels;
+  const frames=Math.floor(dataSize/blockAlign);
+  if(!frames)throw new Error("WAV nie zawiera próbek audio.");
+  const channels=Array.from({length:fmt.channels},()=>new Float32Array(frames));
+
+  const readSample=(o)=>{
+    if(fmt.format===3){
+      if(fmt.bits!==32)throw new Error(`IEEE Float ${fmt.bits}-bit nie jest obsługiwany.`);
+      return v.getFloat32(o,true);
+    }
+    if(fmt.bits===8)return (v.getUint8(o)-128)/128;
+    if(fmt.bits===16)return v.getInt16(o,true)/32768;
+    if(fmt.bits===24){
+      let x=v.getUint8(o)|(v.getUint8(o+1)<<8)|(v.getUint8(o+2)<<16);
+      if(x&0x800000)x|=0xFF000000;
+      return x/8388608;
+    }
+    if(fmt.bits===32)return v.getInt32(o,true)/2147483648;
+    throw new Error(`Nieobsługiwana głębia PCM: ${fmt.bits} bit.`);
+  };
+
+  for(let i=0;i<frames;i++){
+    const base=dataOff+i*blockAlign;
+    for(let c=0;c<fmt.channels;c++){
+      channels[c][i]=clamp(readSample(base+c*bytesPerSample),-1,1);
+    }
+  }
+  return {
+    sampleRate:fmt.sampleRate,
+    numberOfChannels:fmt.channels,
+    length:frames,
+    duration:frames/fmt.sampleRate,
+    getChannelData:c=>channels[c]
+  };
+}
+async function decodeAudioRobust(file,arrayBuffer){
+  let nativeError=null;
+  try{
+    ensureCtx();
+    return await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+  }catch(e){
+    nativeError=e;
+  }
+
+  let isWav=/\.wav$/i.test(file?.name||"")||["audio/wav","audio/x-wav","audio/wave"].includes(file?.type||"");
+  if(!isWav && arrayBuffer.byteLength>=12){
+    try{
+      const v=new DataView(arrayBuffer);
+      isWav=fourCC(v,0)==="RIFF"&&fourCC(v,8)==="WAVE";
+    }catch{}
+  }
+
+  if(isWav){
+    try{
+      return decodeWavFallback(arrayBuffer);
+    }catch(e){
+      throw new Error(`Safari nie zdekodowało WAV, a dekoder awaryjny również nie mógł go odczytać: ${e.message}`);
+    }
+  }
+  throw nativeError||new Error("Nieobsługiwany format audio.");
+}
+async function analyzeTrack(track){
+  activeTrack=track;activeLoopIndex=null;loopTrim=0;$("loopToggle").checked=false;
+  $("analysisCard").classList.remove("hidden");
+  ["chatgptCard","sectionsCard","cuesCard","exchangeCard"].forEach(id=>$(id).classList.add("hidden"));
+  $("waveWrap").classList.add("hidden");$("playerWrap").classList.add("hidden");
+  $("statsGrid").classList.add("hidden");$("timelineWrap").classList.add("hidden");
+  $("progressWrap").classList.remove("hidden");$("analysisBadge").textContent="Analiza";
+  $("trackName").textContent=track.name;
+  $("trackMeta").textContent=`${(track.blob.size/1048576).toFixed(1)} MB`;
+  progress(2,"Wczytywanie pliku…");renderTracks();
+
+  let arr,buffer,mono,beat,analysis,result;
+
+  try{
+    arr=await track.blob.arrayBuffer();
+  }catch(e){
+    console.error("READ",e);
+    track.status="Błąd odczytu";$("analysisBadge").textContent="Błąd";
+    $("analysisStatus").textContent="Nie udało się odczytać pliku z pamięci urządzenia.";
+    renderTracks();return;
+  }
+
+  try{
+    progress(8,"Dekodowanie audio…");await waitFrame();
+    buffer=await decodeAudioRobust(track.file||{name:track.name,type:track.blob.type},arr);
+    track.duration=buffer.duration;
+  }catch(e){
+    console.error("DECODE",e);
+    track.status="Błąd dekodowania";$("analysisBadge").textContent="Błąd";
+    $("analysisStatus").textContent=`Błąd dekodowania: ${e.message||"nieobsługiwany plik audio."}`;
+    renderTracks();return;
+  }
+
+  try{
+    mono=mixMono(buffer);
+    progress(18,"Waveform i energia…");
+    track.peaks=makePeaks(mono,950);
+    await waitFrame();
+
+    progress(28,"Wykrywanie tempa…");
+    beat=await estimateBPM(mono,buffer.sampleRate,buffer.duration,p=>progress(28+p*18,"Wykrywanie tempa…"));
+    track.bpm=beat.bpm;
+
+    analysis=await extractFeatures(mono,buffer.sampleRate,buffer.duration,beat,(p,msg)=>progress(47+p*34,msg));
+
+    progress(84,"Budowanie mapy…");
+    await waitFrame();
+    result=detectSections(analysis,buffer.duration,beat);
+
+    track.sections=numberLabels(result.sections);
+    track.confidence=result.confidence;
+    track.featuresSummary=result.summary;
+    track.analyzed=true;
+    track.status="Gotowe";
+    track.mapSource="Local Enhanced";
+    track.analysisNotes="Enhanced local analysis v3.2: robust WAV decode + beat/bar grid + chroma + self-similarity + phrase recurrence";
+    track.cues=track.cues||[];
+  }catch(e){
+    console.error("ANALYSIS",e);
+    track.status="Błąd analizy";$("analysisBadge").textContent="Błąd analizy";
+    $("analysisStatus").textContent=`Audio zostało poprawnie zdekodowane, ale wystąpił błąd podczas analizy: ${e.message||String(e)}`;
+    renderTracks();return;
+  }
+
+  let saved=true;
+  try{
+    await dbPut(stripRuntime(track));
+  }catch(e){
+    saved=false;
+    console.warn("SAVE",e);
+  }
+
+  progress(100,`Znaleziono ${track.sections.length} sekcji`);
+  $("analysisBadge").textContent=saved?"Gotowe":"Gotowe*";
+  await new Promise(r=>setTimeout(r,160));
+  openTrack(track);
+
+  if(!saved){
+    toast("Analiza zakończona, ale iOS nie zapisał dużego WAV w bibliotece. Wynik działa w tej sesji.");
+  }
+}
 function progress(v,t){$("analysisProgress").style.width=`${clamp(v,0,100)}%`;$("analysisStatus").textContent=t}
 function mixMono(buffer){const len=buffer.length,ch=buffer.numberOfChannels;if(ch===1)return buffer.getChannelData(0).slice();const out=new Float32Array(len);for(let c=0;c<ch;c++){const d=buffer.getChannelData(c);for(let i=0;i<len;i++)out[i]+=d[i]/ch}return out}
 function makePeaks(data,count){const out=new Float32Array(count),step=data.length/count;for(let i=0;i<count;i++){const a=Math.floor(i*step),b=Math.floor((i+1)*step);let p=0;for(let j=a;j<b;j+=Math.max(1,Math.floor((b-a)/90)))p=Math.max(p,Math.abs(data[j]));out[i]=p}return out}
