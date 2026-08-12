@@ -1,4 +1,4 @@
-# Song Mapper v3.3
+# Song Mapper v4 Lighting Edition
 
 ## Najważniejszy workflow
 1. Dodaj audio do Song Mapper.
@@ -70,3 +70,15 @@ Wszystko nadal działa lokalnie, bez zewnętrznego API.
 - automatycznie maksymalnie jeden Bridge,
 - Chorus nie może przejąć większości utworu,
 - niesklasyfikowane sekcje trafiają konserwatywnie do Verse z niskim confidence.
+
+
+## v4 Lighting Edition
+- fixed iPhone overflow for long audio filenames
+- zoomable horizontal timeline
+- draggable section boundaries
+- snap to bar / beat / off
+- undo / redo
+- A/B/C/D similarity-family view
+- assign a whole family to Verse / Chorus / Pre-Chorus / Bridge
+- fast HIT / DROP / BUILD / BLACKOUT / ACCENT markers
+- retains WAV fallback, local DSP, looping, ChatGPT .songmap import and JSON backup

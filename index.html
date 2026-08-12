@@ -15,7 +15,7 @@
 <body>
 <div class="app-shell">
 <header class="topbar">
-  <div><div class="eyebrow">SHOW PREP • LOCAL AUDIO</div><h1>Song Mapper <small>v3.3</small></h1></div>
+  <div><div class="eyebrow">SHOW PREP • LOCAL AUDIO</div><h1>Song Mapper <small>v4 Lighting</small></h1></div>
   <button id="infoBtn" class="icon-btn">i</button>
 </header>
 
@@ -43,13 +43,13 @@
     <div class="stat"><span>Źródło mapy</span><strong id="sourceValue">—</strong></div>
   </div>
 
-  <div id="timelineWrap" class="timeline-wrap hidden">
+  <div id="timelineControls" class="timeline-controls hidden"><span class="muted small">Timeline</span><button id="zoomOutBtn" class="mini-flat">−</button><input id="timelineZoom" type="range" min="1" max="6" step="0.25" value="1"><button id="zoomInBtn" class="mini-flat">+</button><button id="fitTimelineBtn" class="mini-flat">Dopasuj</button></div><div id="timelineScroller" class="timeline-scroller hidden"><div id="timelineWrap" class="timeline-wrap hidden">
     <div class="timeline-ruler" id="timelineRuler"></div>
     <div class="timeline-sections" id="timelineSections"></div>
     <div class="timeline-cues" id="timelineCues"></div>
   </div>
 
-  <div id="waveWrap" class="wave-wrap hidden"><canvas id="waveCanvas"></canvas><div id="playhead" class="playhead"></div></div>
+  </div><div id="waveWrap" class="wave-wrap hidden"><canvas id="waveCanvas"></canvas><div id="playhead" class="playhead"></div></div>
 
   <div id="playerWrap" class="player hidden">
     <div class="now-section" id="nowSection">—</div>
@@ -89,13 +89,14 @@
 <section id="sectionsCard" class="card hidden">
   <div class="section-head"><h2>Struktura utworu</h2><button id="reanalyzeBtn" class="text-btn">Analiza lokalna</button></div>
   <div class="hint">▶ odtwarza, ↻ zapętla. Kliknij nazwę lub timestamp, aby poprawić sekcję.</div>
+<div id="editorTools" class="editor-tools"><div class="tool-row"><button id="undoBtn" class="secondary compact">↶ Cofnij</button><button id="redoBtn" class="secondary compact">↷ Ponów</button><button id="snapToggleBtn" class="secondary compact active-tool">Snap: takt</button><button id="familyViewBtn" class="secondary compact">Rodziny A/B/C/D</button></div><div class="tool-row"><button id="markVerseBtn" class="secondary compact">Verse</button><button id="markChorusBtn" class="secondary compact">Chorus</button><button id="markPreBtn" class="secondary compact">Pre-Chorus</button><button id="markBridgeBtn" class="secondary compact">Bridge</button></div><div class="muted small">Tryb rodzin pozwala oznaczyć wszystkie podobne fragmenty jednym kliknięciem.</div></div>
   <div id="sectionsList" class="sections-list"></div>
   <div class="button-grid"><button id="addSectionBtn" class="secondary">+ Dodaj sekcję</button><button id="splitSectionBtn" class="secondary">✂ Podziel tutaj</button></div>
 </section>
 
 <section id="cuesCard" class="card hidden">
   <div class="section-head"><div><h2>Show cues</h2><div class="muted small">Znaczniki do przygotowania światła</div></div><button id="addCueNowBtn" class="primary compact">+ Cue @ teraz</button></div>
-  <div class="cue-types">
+  <div id="lightingQuick" class="lighting-quick"><button data-quickcue="HIT">⚡ HIT</button><button data-quickcue="DROP">▼ DROP</button><button data-quickcue="BUILD">▲ BUILD</button><button data-quickcue="BLACKOUT">■ BLACKOUT</button><button data-quickcue="ACCENT">✦ ACCENT</button></div><div class="cue-types">
     <button data-cue="DROP">DROP</button><button data-cue="BUILD">BUILD</button><button data-cue="BREAKDOWN">BREAKDOWN</button>
     <button data-cue="HIT">HIT</button><button data-cue="BLACKOUT">BLACKOUT</button><button data-cue="ACCENT">ACCENT</button>
     <button data-cue="VOCAL IN">VOCAL IN</button><button data-cue="VOCAL OUT">VOCAL OUT</button><button data-cue="CUSTOM">CUSTOM</button>
@@ -136,7 +137,7 @@
 </form></dialog>
 
 <dialog id="infoDialog"><form method="dialog">
-<h3>Song Mapper v3.3</h3>
+<h3>Song Mapper v4 Lighting</h3>
 <p>Wersja v3.1 ma przebudowany lokalny analizator i łączy go z dokładniejszą analizą audio wykonaną w ChatGPT. Wymiana odbywa się przez prosty plik <code>.songmap.json</code>.</p>
 <p>Audio nadal jest przechowywane lokalnie. Do ChatGPT wysyłasz je samodzielnie jako załącznik razem z wygenerowaną instrukcją.</p>
 <p>Timeline i show cues służą do przygotowania programu światła: DROP, BUILD, BREAKDOWN, HIT, BLACKOUT, ACCENT oraz wejścia/wyjścia wokalu.</p>
