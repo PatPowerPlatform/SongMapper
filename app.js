@@ -179,7 +179,7 @@ async function analyzeTrack(track){
     track.analyzed=true;
     track.status="Gotowe";
     track.mapSource="Local Enhanced";
-    track.analysisNotes="Enhanced local analysis v3.2: robust WAV decode + beat/bar grid + chroma + self-similarity + phrase recurrence";
+    track.analysisNotes="Enhanced local analysis v3.3: segment-family clustering + anti-flood safeguards + robust WAV decode";
     track.cues=track.cues||[];
   }catch(e){
     console.error("ANALYSIS",e);
@@ -398,174 +398,64 @@ function segmentPatternSimilarity(units,a0,a1,b0,b1){
   return sc/L*(.72+.28*lenPenalty)
 }
 
+function clusterSegments(segs,units){
+  const n=segs.length;if(!n)return {clusters:[],sim:[]};
+  const clusters=[],assigned=new Array(n).fill(false),sim=Array.from({length:n},()=>new Float32Array(n));
+  for(let i=0;i<n;i++){sim[i][i]=1;for(let j=i+1;j<n;j++){const v=segmentPatternSimilarity(units,segs[i].u0,segs[i].u1,segs[j].u0,segs[j].u1);sim[i][j]=sim[j][i]=v}}
+  for(let i=0;i<n;i++){
+    if(assigned[i])continue;
+    const members=[i];
+    for(let j=i+1;j<n;j++)if(!assigned[j]&&sim[i][j]>=.84)members.push(j);
+    if(members.length>=2){
+      const coherent=members.filter(m=>{if(m===i)return true;let best=0;for(const k of members)if(k!==m)best=Math.max(best,sim[m][k]);return best>=.82});
+      if(coherent.length>=2){coherent.forEach(x=>assigned[x]=true);clusters.push({members:coherent,kind:'recurring'})}
+    }
+  }
+  for(let i=0;i<n;i++)if(!assigned[i])clusters.push({members:[i],kind:'single'});
+  return {clusters,sim};
+}
+function classifySegmentFamilies(segs,units,duration){
+  const {clusters,sim}=clusterSegments(segs,units),medE=percentile(segs.map(x=>x.energy),.5)||1,medFlux=percentile(segs.map(x=>x.flux),.5)||.01;
+  segs.forEach(s=>{s.label='Section';s.confidence=.54});
+  const families=clusters.map((cl,idx)=>{const m=cl.members,rc=m.length,avgEnergy=m.reduce((a,i)=>a+segs[i].energy,0)/rc,avgFlux=m.reduce((a,i)=>a+segs[i].flux,0)/rc,firstIndex=Math.min(...m),lastIndex=Math.max(...m);let separation=0;for(let a=0;a<m.length;a++)for(let b=a+1;b<m.length;b++)separation=Math.max(separation,Math.abs(m[a]-m[b]));return {idx,members:m,repeatCount:rc,avgEnergy,avgFlux,firstIndex,lastIndex,separation}});
+  const ff=families.find(f=>f.members.includes(0));if(ff){const d=segs[0].end-segs[0].start;if(d<=32&&(ff.repeatCount===1||segs[0].energy<medE*.78)){segs[0].label='Intro';segs[0].confidence=.82}}
+  const li=segs.length-1,lf=families.find(f=>f.members.includes(li));if(lf){const d=segs[li].end-segs[li].start;if(d<=32&&(lf.repeatCount===1||segs[li].energy<medE*.75)){segs[li].label='Outro';segs[li].confidence=.80}}
+  const eligible=families.filter(f=>f.repeatCount>=2&&f.members.some(i=>!['Intro','Outro'].includes(segs[i].label)));
+  let chorusFam=null,chorusScore=-1e9;
+  for(const f of eligible){const er=clamp(f.avgEnergy/medE,.55,1.8),fr=clamp(f.avgFlux/(medFlux||.01),.5,2),score=Math.min(f.repeatCount,3)*.22+Math.min(f.separation,4)*.08+(er-1)*.10+(fr-1)*.035-(f.firstIndex===0?.10:0);if(score>chorusScore){chorusScore=score;chorusFam=f}}
+  if(chorusFam&&chorusScore>.42)for(const i of chorusFam.members)if(!['Intro','Outro'].includes(segs[i].label)){segs[i].label='Chorus';segs[i].confidence=clamp(.72+Math.min(chorusFam.repeatCount-2,2)*.06+Math.min(chorusFam.separation,4)*.02,.72,.94)}
+  let verseFam=null,verseScore=-1e9;
+  for(const f of eligible){if(chorusFam&&f.idx===chorusFam.idx)continue;const er=clamp(f.avgEnergy/medE,.55,1.8),score=Math.min(f.repeatCount,3)*.22+Math.min(f.separation,4)*.06+(f.firstIndex<=2?.12:0)-(er-1)*.04;if(score>verseScore){verseScore=score;verseFam=f}}
+  if(verseFam&&verseScore>.35)for(const i of verseFam.members)if(segs[i].label==='Section'){segs[i].label='Verse';segs[i].confidence=clamp(.68+Math.min(verseFam.repeatCount-2,2)*.05,.68,.88)}
+  const before=[];for(let i=0;i<segs.length-1;i++)if(segs[i+1].label==='Chorus'&&segs[i].label==='Section')before.push(i);
+  for(const i of before){let matches=0;for(const j of before)if(j!==i&&sim[i][j]>.80)matches++;const bars=segs[i].u1-segs[i].u0,transition=1-featureSimilarity(segs[i].feat,segs[i+1].feat);if(matches>0||(bars<=6&&transition>.09)){segs[i].label='Pre-Chorus';segs[i].confidence=matches>0?.84:.66}}
+  let bridge=-1,bscore=-1e9;
+  for(let i=1;i<segs.length-1;i++){
+    if(segs[i].label!=='Section')continue;const fam=families.find(f=>f.members.includes(i));if(!fam||fam.repeatCount!==1)continue;const pos=(segs[i].start+segs[i].end)/2/duration;if(pos<.45||pos>.90)continue;let bo=0;for(let j=0;j<segs.length;j++)if(i!==j)bo=Math.max(bo,sim[i][j]);const score=(1-bo)+((segs[i-1].label==='Chorus'||segs[i+1].label==='Chorus')?.12:0)+(pos>.60?.05:0);if(score>bscore){bscore=score;bridge=i}}
+  if(bridge>=0&&bscore>.22){segs[bridge].label='Bridge';segs[bridge].confidence=clamp(.66+bscore*.35,.66,.90)}
+  for(let i=1;i<segs.length-1;i++)if(segs[i].label==='Section'){const bars=segs[i].u1-segs[i].u0;if(segs[i].energy<medE*.52&&bars<=4){segs[i].label='Break';segs[i].confidence=.62}else if(segs[i].flux>medFlux*1.6&&bars<=8){segs[i].label='Instrumental';segs[i].confidence=.60}}
+  for(const x of segs)if(x.label==='Section'){x.label='Verse';x.confidence=.50}
+  let bridges=segs.map((x,i)=>x.label==='Bridge'?i:-1).filter(i=>i>=0);if(bridges.length>1){const keep=bridges.reduce((a,b)=>segs[a].confidence>=segs[b].confidence?a:b);for(const i of bridges)if(i!==keep){segs[i].label='Verse';segs[i].confidence=.48}}
+  let ci=segs.map((x,i)=>x.label==='Chorus'?i:-1).filter(i=>i>=0),maxC=Math.max(2,Math.floor(segs.length*.55));if(ci.length>maxC){ci.sort((a,b)=>segs[b].confidence-segs[a].confidence);for(const i of ci.slice(maxC)){segs[i].label='Verse';segs[i].confidence=.48}}
+  return {segs,clusters,families,medE,medFlux};
+}
 function detectSections(a,duration,beat){
-  if(duration<28||a.features.length<12)return{sections:[{label:"Intro",start:0,end:Math.min(duration,8),confidence:.55},{label:"Verse",start:Math.min(duration,8),end:duration,confidence:.48}].filter(s=>s.end-s.start>2),confidence:.5,summary:{algorithm:"enhanced-v3.1"}};
-  const grid=buildBarUnits(a,beat,duration),units=grid.units,n=units.length;
-  if(n<5)return{sections:[{label:"Verse",start:0,end:duration,confidence:.45}],confidence:.45,summary:{algorithm:"enhanced-v3.1"}};
-  const sim=selfSimilarity(units),nov=checkerNovelty(sim);
-  const changes=new Float32Array(n);
-  for(let i=1;i<n;i++){
-    const harmonic=1-featureSimilarity(units[i-1].feat,units[i].feat);
-    const e=Math.abs(Math.log((units[i].energy+1e-5)/(units[i-1].energy+1e-5)));
-    const f=Math.abs(units[i].flux-units[i-1].flux);
-    changes[i]=harmonic*.64+clamp(e,0,1)*.22+clamp(f*3,0,1)*.14;
-  }
-  const combined=Array.from({length:n},(_,i)=>(nov[i]||0)*.62+(changes[i]||0)*.38);
-  const threshold=Math.max(percentile(combined.slice(1,-1),.67),.07);
-
-  // Candidate phrase boundaries are bars with structural novelty, with a weak 4-bar prior.
-  const cand=[0];
-  for(let i=2;i<n-2;i++){
-    const phrasePrior=(i%4===0)?.035:(i%2===0?.012:0);
-    const sc=combined[i]+phrasePrior;
-    if(sc>=threshold && sc>=combined[i-1] && sc>=combined[i+1]){
-      const last=cand[cand.length-1];
-      if(i-last>=2)cand.push(i);
-      else if(combined[i]>combined[last])cand[cand.length-1]=i
-    }
-  }
-  cand.push(n);
-
-  // Split implausibly long sections near strongest 4/8-bar candidate.
-  let bounds=[cand[0]];
-  for(let k=1;k<cand.length;k++){
-    let prev=bounds[bounds.length-1],cur=cand[k];
-    while(cur-prev>12){
-      let best=-1,bi=-1;
-      for(let x=prev+4;x<=cur-4;x++){
-        const phraseBonus=(x-prev)%4===0?.04:0,sc=combined[x]+phraseBonus;
-        if(sc>best){best=sc;bi=x}
-      }
-      if(bi<0)break;bounds.push(bi);prev=bi
-    }
-    bounds.push(cur)
-  }
+  if(duration<28||a.features.length<12)return{sections:[{label:'Intro',start:0,end:Math.min(duration,8),confidence:.55},{label:'Verse',start:Math.min(duration,8),end:duration,confidence:.48}].filter(s=>s.end-s.start>2),confidence:.5,summary:{algorithm:'enhanced-v3.3'}};
+  const grid=buildBarUnits(a,beat,duration),units=grid.units,n=units.length;if(n<5)return{sections:[{label:'Verse',start:0,end:duration,confidence:.45}],confidence:.45,summary:{algorithm:'enhanced-v3.3'}};
+  const sim=selfSimilarity(units),nov=checkerNovelty(sim),changes=new Float32Array(n);
+  for(let i=1;i<n;i++){const harmonic=1-featureSimilarity(units[i-1].feat,units[i].feat),e=Math.abs(Math.log((units[i].energy+1e-5)/(units[i-1].energy+1e-5))),f=Math.abs(units[i].flux-units[i-1].flux);changes[i]=harmonic*.64+clamp(e,0,1)*.22+clamp(f*3,0,1)*.14}
+  const combined=Array.from({length:n},(_,i)=>(nov[i]||0)*.62+(changes[i]||0)*.38),threshold=Math.max(percentile(combined.slice(1,-1),.67),.07),cand=[0];
+  for(let i=2;i<n-2;i++){const phrase=(i%4===0)?.035:(i%2===0?.012:0),sc=combined[i]+phrase;if(sc>=threshold&&sc>=combined[i-1]&&sc>=combined[i+1]){const last=cand[cand.length-1];if(i-last>=2)cand.push(i);else if(combined[i]>combined[last])cand[cand.length-1]=i}}
+  cand.push(n);let bounds=[cand[0]];
+  for(let k=1;k<cand.length;k++){let prev=bounds[bounds.length-1],cur=cand[k];while(cur-prev>12){let best=-1,bi=-1;for(let x=prev+4;x<=cur-4;x++){const sc=combined[x]+(((x-prev)%4===0)?.04:0);if(sc>best){best=sc;bi=x}}if(bi<0)break;bounds.push(bi);prev=bi}bounds.push(cur)}
   bounds=[...new Set(bounds)].sort((x,y)=>x-y);
-
-  // Remove tiny 1-bar fragments unless the change is exceptionally strong.
-  for(let pass=0;pass<2;pass++){
-    const out=[bounds[0]];
-    for(let i=1;i<bounds.length-1;i++){
-      const prev=out[out.length-1],cur=bounds[i],next=bounds[i+1];
-      if((cur-prev)<2 && combined[cur]<percentile(combined,.90))continue;
-      if((next-cur)<2 && combined[cur]<percentile(combined,.90))continue;
-      out.push(cur)
-    }
-    out.push(bounds[bounds.length-1]);bounds=out
-  }
-
-  let segs=[];
-  for(let i=0;i<bounds.length-1;i++){
-    const a0=bounds[i],a1=bounds[i+1],d=segmentDescriptor(units,a0,a1);
-    segs.push({u0:a0,u1:a1,start:units[a0].start,end:units[a1-1].end,...d,label:"Verse",confidence:.54,bestSimilarity:0,repeatCount:0})
-  }
-  segs[0].start=0;segs[segs.length-1].end=duration;
-
-  // Recurrence at section-pattern level. This is the main chorus/verse signal.
-  for(let i=0;i<segs.length;i++){
-    let best=0,count=0;
-    for(let j=0;j<segs.length;j++){
-      if(i===j)continue;
-      const ps=segmentPatternSimilarity(units,segs[i].u0,segs[i].u1,segs[j].u0,segs[j].u1);
-      best=Math.max(best,ps);if(ps>.83)count++
-    }
-    segs[i].bestSimilarity=best;segs[i].repeatCount=count
-  }
-  const medE=percentile(segs.map(x=>x.energy),.5)||1;
-  const medFlux=percentile(segs.map(x=>x.flux),.5)||.01;
-
-  // Intro / Outro use position + uniqueness, not just loudness.
-  const first=segs[0],firstDur=first.end-first.start;
-  if(firstDur<32 && (first.bestSimilarity<.83 || first.energy<medE*.82)){first.label="Intro";first.confidence=.76}
-  const last=segs[segs.length-1],lastDur=last.end-last.start;
-  if(segs.length>2&&lastDur<32&&(last.bestSimilarity<.82||last.energy<medE*.78)){last.label="Outro";last.confidence=.73}
-
-  // Find recurring families. Chorus favors recurrence across separated positions and a fuller texture,
-  // but recurrence is much more important than loudness.
-  let chorusIdx=-1,chorusScore=-Infinity;
-  for(let i=0;i<segs.length;i++){
-    const s=segs[i];if(["Intro","Outro"].includes(s.label))continue;
-    let separated=0;
-    for(let j=0;j<segs.length;j++)if(i!==j&&Math.abs(j-i)>1&&segmentPatternSimilarity(units,s.u0,s.u1,segs[j].u0,segs[j].u1)>.83)separated++;
-    const texture=clamp(s.energy/medE,.6,1.6)-1;
-    const score=s.bestSimilarity*.58+Math.min(2,separated)*.16+Math.min(3,s.repeatCount)*.06+texture*.05;
-    if(score>chorusScore){chorusScore=score;chorusIdx=i}
-  }
-  if(chorusIdx>=0 && chorusScore>.68){
-    const anchor=segs[chorusIdx];
-    for(let i=0;i<segs.length;i++){
-      if(["Intro","Outro"].includes(segs[i].label))continue;
-      const ps=segmentPatternSimilarity(units,anchor.u0,anchor.u1,segs[i].u0,segs[i].u1);
-      if(ps>.82){segs[i].label="Chorus";segs[i].confidence=clamp(.64+(ps-.82)*1.55+Math.min(2,segs[i].repeatCount)*.035,.62,.96)}
-    }
-  }
-
-  // Determine a second recurring family as verses; unclassified sections are not automatically Verse yet.
-  let verseAnchor=-1,verseScore=-1;
-  for(let i=0;i<segs.length;i++){
-    if(segs[i].label!=="Verse"||["Intro","Outro"].includes(segs[i].label))continue;
-    const score=segs[i].bestSimilarity+Math.min(2,segs[i].repeatCount)*.07;
-    if(score>verseScore){verseScore=score;verseAnchor=i}
-  }
-  if(verseAnchor>=0 && verseScore>.78){
-    const anchor=segs[verseAnchor];
-    for(let i=0;i<segs.length;i++)if(segs[i].label==="Verse"){
-      const ps=segmentPatternSimilarity(units,anchor.u0,anchor.u1,segs[i].u0,segs[i].u1);
-      if(ps>.80)segs[i].confidence=clamp(.60+(ps-.80)*1.3,.58,.88)
-    }
-  }
-
-  // Pre-chorus: directly before repeated choruses, usually shorter and harmonically distinct.
-  for(let i=0;i<segs.length-1;i++){
-    const s=segs[i],next=segs[i+1];if(s.label!=="Verse"||next.label!=="Chorus")continue;
-    const bars=s.u1-s.u0,transition=1-featureSimilarity(s.feat,next.feat);
-    let counterpart=false;
-    for(let j=0;j<segs.length-1;j++){
-      if(j===i||segs[j+1].label!=="Chorus")continue;
-      if(segmentPatternSimilarity(units,s.u0,s.u1,segs[j].u0,segs[j].u1)>.80){counterpart=true;break}
-    }
-    if(counterpart || (bars<=6&&transition>.10&&s.energy<=next.energy*1.1)){
-      s.label="Pre-Chorus";s.confidence=counterpart?.84:.67
-    }
-  }
-
-  // Bridge: unique mid/late passage between repeated material.
-  let bridge=-1,bridgeScore=-Infinity;
-  for(let i=1;i<segs.length-1;i++){
-    const s=segs[i];if(s.label!=="Verse")continue;
-    const pos=(s.start+s.end)/2/duration;if(pos<.42||pos>.90)continue;
-    const unique=1-s.bestSimilarity;
-    const surrounded=(segs[i-1].label==="Chorus"||segs[i+1].label==="Chorus")?.10:0;
-    const score=unique+surrounded+(pos>.60?.04:0);
-    if(score>bridgeScore){bridgeScore=score;bridge=i}
-  }
-  if(bridge>=0&&segs.length>=5&&bridgeScore>.18){segs[bridge].label="Bridge";segs[bridge].confidence=clamp(.60+bridgeScore*.55,.62,.88)}
-
-  // Break / Instrumental only when there is evidence; otherwise retain Verse.
-  for(let i=1;i<segs.length-1;i++){
-    const s=segs[i];if(s.label!=="Verse")continue;
-    const bars=s.u1-s.u0;
-    if(s.energy<medE*.58&&bars<=4){s.label="Break";s.confidence=.61}
-    else if(s.flux>medFlux*1.45&&s.bestSimilarity<.74&&bars<=8){s.label="Instrumental";s.confidence=.58}
-  }
-
-  // Continuity and exact song limits.
-  segs[0].start=0;
-  for(let i=1;i<segs.length;i++){const cut=(segs[i-1].end+segs[i].start)/2;segs[i-1].end=cut;segs[i].start=cut}
-  segs[segs.length-1].end=duration;
-
-  // confidence also reflects boundary strength
-  for(let i=0;i<segs.length;i++){
-    const left=i===0?.15:combined[segs[i].u0]||0,right=i===segs.length-1?.15:combined[segs[i].u1]||0;
-    const boundaryConf=clamp((left+right)*2.5,.35,.92);
-    segs[i].confidence=clamp(segs[i].confidence*.78+boundaryConf*.22,.45,.97)
-  }
-  const confidence=segs.reduce((x,y)=>x+y.confidence,0)/segs.length;
-  return{
-    sections:segs.map((x,i)=>({label:x.label,start:x.start,end:x.end,confidence:x.confidence,similarity:x.bestSimilarity,note:"",id:`enh_${Date.now()}_${i}`})),
-    confidence,
-    summary:{algorithm:"enhanced-v3.1",barSec:grid.barSec,barCount:n,tempoConfidence:beat?.tempoConfidence||null,chorusScore,medianEnergy:medE}
-  };
+  for(let pass=0;pass<2;pass++){const out=[bounds[0]];for(let i=1;i<bounds.length-1;i++){const prev=out[out.length-1],cur=bounds[i],next=bounds[i+1];if((cur-prev)<2&&combined[cur]<percentile(combined,.90))continue;if((next-cur)<2&&combined[cur]<percentile(combined,.90))continue;out.push(cur)}out.push(bounds[bounds.length-1]);bounds=out}
+  let segs=[];for(let i=0;i<bounds.length-1;i++){const a0=bounds[i],a1=bounds[i+1],d=segmentDescriptor(units,a0,a1);segs.push({u0:a0,u1:a1,start:units[a0].start,end:units[a1-1].end,...d,label:'Section',confidence:.54})}
+  segs[0].start=0;segs[segs.length-1].end=duration;const classified=classifySegmentFamilies(segs,units,duration);segs=classified.segs;
+  for(let i=1;i<segs.length;i++){const cut=(segs[i-1].end+segs[i].start)/2;segs[i-1].end=cut;segs[i].start=cut}segs[0].start=0;segs[segs.length-1].end=duration;
+  for(let i=0;i<segs.length;i++){const left=i===0?.15:combined[segs[i].u0]||0,right=i===segs.length-1?.15:combined[segs[i].u1]||0,boundary=clamp((left+right)*2.5,.35,.92);segs[i].confidence=clamp(segs[i].confidence*.82+boundary*.18,.42,.97)}
+  const confidence=segs.reduce((x,y)=>x+y.confidence,0)/segs.length,labelCounts={};for(const x of segs)labelCounts[x.label]=(labelCounts[x.label]||0)+1;
+  return{sections:segs.map((x,i)=>({label:x.label,start:x.start,end:x.end,confidence:x.confidence,note:'',id:`enh33_${Date.now()}_${i}`})),confidence,summary:{algorithm:'enhanced-v3.3-family-clustering',barSec:grid.barSec,barCount:n,tempoConfidence:beat?.tempoConfidence||null,familyCount:classified.clusters.length,labelCounts}};
 }
 function numberLabels(sections){const counts={};return sections.map(s=>{counts[s.label]=(counts[s.label]||0)+1;return{...s,displayLabel:["Verse","Chorus","Pre-Chorus"].includes(s.label)?`${s.label} ${counts[s.label]}`:s.label}})}
 

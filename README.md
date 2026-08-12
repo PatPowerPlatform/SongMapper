@@ -1,4 +1,4 @@
-# Song Mapper v3.2
+# Song Mapper v3.3
 
 ## Najważniejszy workflow
 1. Dodaj audio do Song Mapper.
@@ -61,3 +61,12 @@ Wszystko nadal działa lokalnie, bez zewnętrznego API.
 - WAVE_FORMAT_EXTENSIBLE dla PCM/Float32,
 - błąd IndexedDB / quota nie jest już zgłaszany jako błąd dekodowania,
 - duży WAV może zostać przeanalizowany nawet wtedy, gdy iOS odmówi jego trwałego zapisania w bibliotece.
+
+
+## v3.3 — classification fix
+- podobne sekcje są najpierw grupowane w rodziny A/B/C/D,
+- Chorus wymaga powtarzalnej rodziny,
+- Bridge jest wybierany tylko jako pojedyncza unikalna sekcja,
+- automatycznie maksymalnie jeden Bridge,
+- Chorus nie może przejąć większości utworu,
+- niesklasyfikowane sekcje trafiają konserwatywnie do Verse z niskim confidence.
